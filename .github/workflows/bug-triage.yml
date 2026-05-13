@@ -53,6 +53,71 @@ jobs:
               labels: [severityLabel]
             });
 
+      - name: Transfer to product repo
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PROJECT_TOKEN || secrets.GITHUB_TOKEN }}
+          script: |
+            const body = context.payload.issue.body || '';
+            const currentRepo = context.repo.repo;
+
+            // Only transfer if this issue is filed in .github (the catch-all intake repo)
+            if (currentRepo !== '.github') {
+              core.info('Issue already in a product repo — skipping transfer');
+              return;
+            }
+
+            // Extract product from bug form: "### Product / Repository\n<value>"
+            const productMatch = body.match(/### Product \/ Repository\s*\n([^\n]+)/);
+            const product = productMatch ? productMatch[1].trim() : null;
+
+            // Repo name map — form label → GitHub repo slug
+            const repoMap = {
+              'teachenza': 'teachenza',
+              'ruflo': 'ruflo',
+              'flo.ruv.io': 'flo',
+              'goal.ruv.io': 'goal',
+              'gsd-saas-creator': 'gsd-saas-creator',
+            };
+
+            // Try exact match, then partial match
+            let targetRepo = null;
+            if (product) {
+              const key = Object.keys(repoMap).find(k => product.toLowerCase().includes(k.toLowerCase()));
+              if (key) targetRepo = repoMap[key];
+            }
+
+            if (!targetRepo) {
+              core.info(`No matching repo for product "${product}" — staying in .github`);
+              return;
+            }
+
+            core.info(`Transferring to SaaS-Pretty-Projects/${targetRepo}`);
+
+            // Get target repo node ID
+            const repoData = await github.graphql(`
+              query($owner: String!, $name: String!) {
+                repository(owner: $owner, name: $name) { id }
+              }
+            `, { owner: context.repo.owner, name: targetRepo });
+
+            const targetRepoId = repoData.repository.id;
+
+            // Transfer the issue
+            const result = await github.graphql(`
+              mutation($issueId: ID!, $repoId: ID!) {
+                transferIssue(input: {issueId: $issueId, repositoryId: $repoId, createLabelsIfMissing: true}) {
+                  issue { url number }
+                }
+              }
+            `, {
+              issueId: context.payload.issue.node_id,
+              repoId: targetRepoId
+            });
+
+            const newIssue = result.transferIssue.issue;
+            core.info(`✅ Transferred → ${newIssue.url}`);
+
       - name: Post triage comment
         uses: actions/github-script@v7
         with:
@@ -60,12 +125,23 @@ jobs:
             const issue = context.payload.issue;
             const body = issue.body || '';
 
+            // Skip if issue was transferred (it no longer exists in this repo)
+            try {
+              await github.rest.issues.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number
+              });
+            } catch {
+              core.info('Issue was transferred — skipping comment');
+              return;
+            }
+
             let severity = '🟢 Low';
             if (body.includes('Critical')) severity = '🔴 Critical';
             else if (body.includes('High')) severity = '🟠 High';
             else if (body.includes('Medium')) severity = '🟡 Medium';
 
-            // Extract product from form
             const productMatch = body.match(/### Product \/ Repository\s*\n([^\n]+)/);
             const product = productMatch ? productMatch[1].trim() : 'Unknown';
 
@@ -105,6 +181,18 @@ jobs:
             const projectNumber = 1;
             const orgLogin = 'SaaS-Pretty-Projects';
 
+            // Skip if issue was transferred (verify it still exists here)
+            try {
+              await github.rest.issues.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.issue.number
+              });
+            } catch {
+              core.info('Issue was transferred — skipping board add (product repo triage will handle it)');
+              return;
+            }
+
             try {
               const projectQuery = await github.graphql(`
                 query($org: String!, $number: Int!) {
@@ -129,5 +217,5 @@ jobs:
 
               core.info(`✅ Added issue #${context.payload.issue.number} to project board`);
             } catch (e) {
-              core.warning(`Could not add to project board: ${e.message}. Add PROJECT_TOKEN secret with project:write scope.`);
+              core.warning(`Could not add to project board: ${e.message}`);
             }
