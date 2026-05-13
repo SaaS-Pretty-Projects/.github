@@ -1,0 +1,114 @@
+name: 🐛 Bug Report
+description: Report a bug across any SaaS Pretty Projects product
+title: "[BUG] "
+labels: ["bug", "triage"]
+assignees:
+  - wysRocket
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! Fill in as much detail as possible.
+
+  - type: dropdown
+    id: product
+    attributes:
+      label: Product / Repository
+      description: Which product is affected?
+      options:
+        - teachenza
+        - tutivex
+        - Portlixa
+        - gameweara.com
+        - cvantra
+        - webqora
+        - hostevra.com
+        - worknira
+        - minivexa
+        - eurocookflow
+        - skillnira
+        - guidenza-platform
+        - Adaptenza
+        - cloudbase
+        - luxuryui
+        - Terrastone
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: How severe is this bug?
+      options:
+        - "🔴 Critical — app broken / data loss"
+        - "🟠 High — major feature broken"
+        - "🟡 Medium — feature partially broken"
+        - "🟢 Low — minor / cosmetic issue"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      placeholder: What happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      placeholder: What did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      placeholder: What actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: |
+        - OS: macOS / Windows / Ubuntu
+        - Browser: Chrome / Safari / Firefox
+        - URL or app version:
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots / Logs
+      placeholder: Drag images or paste logs here.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I searched existing issues and this is not a duplicate
+          required: true
+        - label: I have included steps to reproduce
+          required: true

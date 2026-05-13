@@ -1,0 +1,133 @@
+name: Bug Triage
+
+on:
+  issues:
+    types: [opened, labeled]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  triage:
+    name: Triage Bug Report
+    runs-on: ubuntu-latest
+    if: contains(github.event.issue.labels.*.name, 'bug')
+    steps:
+      - name: Apply severity label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.issue.body || '';
+            let severityLabel = 'severity: low';
+
+            if (body.includes('Critical')) severityLabel = 'severity: critical';
+            else if (body.includes('High')) severityLabel = 'severity: high';
+            else if (body.includes('Medium')) severityLabel = 'severity: medium';
+
+            const labels = ['severity: critical', 'severity: high', 'severity: medium', 'severity: low'];
+            const colors = {
+              'severity: critical': 'B60205',
+              'severity: high': 'E4E669',
+              'severity: medium': 'FBCA04',
+              'severity: low': '0075CA'
+            };
+
+            for (const label of labels) {
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner, repo: context.repo.repo, name: label
+                });
+              } catch {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  name: label, color: colors[label]
+                });
+              }
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              labels: [severityLabel]
+            });
+
+      - name: Post triage comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const body = issue.body || '';
+
+            let severity = '🟢 Low';
+            if (body.includes('Critical')) severity = '🔴 Critical';
+            else if (body.includes('High')) severity = '🟠 High';
+            else if (body.includes('Medium')) severity = '🟡 Medium';
+
+            // Extract product from form
+            const productMatch = body.match(/### Product \/ Repository\s*\n([^\n]+)/);
+            const product = productMatch ? productMatch[1].trim() : 'Unknown';
+
+            const comment = [
+              `## 🤖 Bug Triage — Auto Summary`,
+              ``,
+              `| Field | Value |`,
+              `|-------|-------|`,
+              `| **Product** | ${product} |`,
+              `| **Severity** | ${severity} |`,
+              `| **Reported by** | @${issue.user.login} |`,
+              `| **Assigned to** | @wysRocket |`,
+              `| **Status** | 🔍 Needs investigation |`,
+              ``,
+              `### Triage Checklist`,
+              `- [ ] Reproduced locally`,
+              `- [ ] Root cause identified`,
+              `- [ ] Fix scoped and linked`,
+              `- [ ] Fix implemented & tested`,
+              `- [ ] Closed with resolution note`,
+              ``,
+              `> _Auto-triaged by bug-triage workflow._`,
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: comment
+            });
+
+      - name: Add to project board
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PROJECT_TOKEN || secrets.GITHUB_TOKEN }}
+          script: |
+            const projectNumber = 1;
+            const orgLogin = 'SaaS-Pretty-Projects';
+
+            try {
+              const projectQuery = await github.graphql(`
+                query($org: String!, $number: Int!) {
+                  organization(login: $org) {
+                    projectV2(number: $number) { id }
+                  }
+                }
+              `, { org: orgLogin, number: projectNumber });
+
+              const projectId = projectQuery.organization.projectV2.id;
+
+              await github.graphql(`
+                mutation($project: ID!, $content: ID!) {
+                  addProjectV2ItemById(input: { projectId: $project, contentId: $content }) {
+                    item { id }
+                  }
+                }
+              `, {
+                project: projectId,
+                content: context.payload.issue.node_id
+              });
+
+              core.info(`✅ Added issue #${context.payload.issue.number} to project board`);
+            } catch (e) {
+              core.warning(`Could not add to project board: ${e.message}. Add PROJECT_TOKEN secret with project:write scope.`);
+            }
